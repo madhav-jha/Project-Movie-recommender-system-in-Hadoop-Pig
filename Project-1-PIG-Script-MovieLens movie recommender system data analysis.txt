@@ -1,0 +1,54 @@
+movie_line = LOAD 'movies.dat' AS (lineArray:chararray);
+movie_details = FOREACH movie_line GENERATE FLATTEN(REGEX_EXTRACT_ALL(lineArray, '(.*?)::(.*?)::(.*?)')) AS(movie_id:int, movie_title:chararray, genre:chararray);
+rating_line = LOAD 'ratings.dat' AS (lineArray:chararray);
+rating_details = FOREACH rating_line GENERATE FLATTEN(REGEX_EXTRACT_ALL(lineArray, '(.*?)::(.*?)::(.*?)::(.*?)')) AS (user_id:int, movie_id:chararray, rating:chararray, timestamp:long);
+user_line = LOAD 'users.dat' AS (lineArray:chararray);
+user_details = FOREACH user_line GENERATE FLATTEN(REGEX_EXTRACT_ALL(lineArray, '(.*?)::(.*?)::(.*?)::(.*?)::(.*?)')) AS (user_id:chararray, gender:chararray, age:chararray, occupation:int, zip_code:long);
+
+1. Top ten most viewed movies with their movies Name (Ascending or Descending order) 
+
+grouped_rating_details = GROUP rating_details BY movie_id;
+count_grouped_rating_details = FOREACH grouped_rating_details GENERATE group, COUNT(rating_details.user_id) AS views;
+ordered_count_grouped_rating_details = ORDER count_grouped_rating_details BY views DESC;
+top_ten_most_viewed_movies = LIMIT ordered_count_grouped_rating_details 10;
+DUMP top_ten_most_viewed_movies;
+
+2. Top twenty rated movies (Condition : The movie should be rated/viewed by at least 40 users) 
+
+grouped_rating_details = GROUP rating_details BY movie_id;
+count_grouped_rating_details = FOREACH grouped_rating_details GENERATE group, COUNT(rating_details.user_id) AS views;
+filtered_grouped_rating_details = FILTER count_grouped_rating_details BY views>=40;
+joined_rating_views = JOIN rating_details BY movie_id, filtered_grouped_rating_details BY group;
+ordered_joined_rating_views = ORDER joined_rating_views BY $2 DESC;
+top_twenty_rated_movies = LIMIT ordered_joined_rating_views 20;
+DUMP top_twenty_rated_movies;
+
+
+3. Top twenty rated movies (which is calculated in the previous step) with no of views in the following age group
+ (Age group :
+	 1. Young (<20 years)
+	 
+	 top_twenty_movies = FOREACH top_twenty_rated_movies GENERATE rating_details::user_id, rating_details::movie_id,rating_details::rating, filtered_grouped_rating_details::views;
+	 STORE top_twenty_movies INTO 'top_twenty_movies';
+	 top20_movies = LOAD 'top_twenty_movies' USING PigStorage('\t') AS (user_id:chararray, movie_id: chararray, rating:chararray, views:long);
+	 young_users = FILTER user_details BY (int)age<20;
+	 joined_young_users_top_twenty_movies = JOIN young_users BY user_id, top20_movies BY user_id; 
+	 DUMP joined_young_users_top_twenty_movies;
+	 
+	2. Young Adult(20-40 years)
+
+     young_adult_users = FILTER user_details BY (int)age>=20 AND (int)age<=40;
+	 joined_young_adult_users_top_twenty_movies = JOIN young_adult_users BY user_id, top20_movies BY user_id; 
+	 DUMP joined_young_adult_users_top_twenty_movies;
+	 
+	3.adult (> 40years)
+	
+	adult_users = FILTER user_details BY (int)age>40;
+	joined_adult_users_top_twenty_movies = JOIN adult_users BY user_id, top20_movies BY user_id; 
+	DUMP joined_adult_users_top_twenty_movies;
+	
+ 4. Top ten critics (Users who have given very low ratings; Condition : The users should have at least rated 40 movies)
+ 
+ordered_joined_rating_views = ORDER joined_rating_views BY $2 ASC;
+top_ten_critics = LIMIT ordered_joined_rating_views 10;
+DUMP top_ten_critics;
